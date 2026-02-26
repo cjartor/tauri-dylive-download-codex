@@ -4,6 +4,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::webview::WebviewBuilder;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl};
+use tauri_plugin_dialog::DialogExt;
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -12,6 +13,7 @@ struct DownloadRequest {
     m3u8_url: String,
     file_name: Option<String>,
     output_dir: Option<String>,
+    output_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -119,6 +121,25 @@ fn discover_streams(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn pick_save_path(app: tauri::AppHandle, file_name: Option<String>) -> Result<Option<String>, String> {
+    let suggested = sanitize_name(file_name.as_deref().unwrap_or("video"));
+    let path = app
+        .dialog()
+        .file()
+        .set_file_name(format!("{suggested}.ts"))
+        .blocking_save_file();
+
+    if let Some(file_path) = path {
+        let pb = file_path
+            .into_path()
+            .map_err(|e| format!("invalid selected path: {e}"))?;
+        return Ok(Some(pb.to_string_lossy().to_string()));
+    }
+
+    Ok(None)
+}
+
+#[tauri::command]
 async fn start_download(app: tauri::AppHandle, req: DownloadRequest) -> Result<String, String> {
     emit_download(
         &app,
@@ -131,23 +152,33 @@ async fn start_download(app: tauri::AppHandle, req: DownloadRequest) -> Result<S
         },
     );
 
-    let out_dir = req
-        .output_dir
-        .map(PathBuf::from)
-        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-
-    if !out_dir.exists() {
-        fs::create_dir_all(&out_dir).map_err(|e| format!("create output dir failed: {e}"))?;
-    }
-
     let safe_name = sanitize_name(
         req.file_name
             .as_deref()
             .filter(|s| !s.trim().is_empty())
             .unwrap_or("video"),
     );
-
-    let output_file = unique_path(&out_dir, &safe_name, "ts");
+    let output_file = if let Some(selected) = req.output_path.clone() {
+        let mut p = PathBuf::from(selected);
+        if p.extension().is_none() {
+            p.set_extension("ts");
+        }
+        if let Some(parent) = p.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent).map_err(|e| format!("create output dir failed: {e}"))?;
+            }
+        }
+        p
+    } else {
+        let out_dir = req
+            .output_dir
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+        if !out_dir.exists() {
+            fs::create_dir_all(&out_dir).map_err(|e| format!("create output dir failed: {e}"))?;
+        }
+        unique_path(&out_dir, &safe_name, "ts")
+    };
 
     let first_playlist = fetch_text(&req.m3u8_url).await?;
     let media_playlist_url = choose_media_playlist_url(&req.m3u8_url, &first_playlist)?;
@@ -337,6 +368,7 @@ fn resolve_url(base: &str, candidate: &str) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle().clone();
             ensure_review_webview(&handle)?;
@@ -346,7 +378,8 @@ pub fn run() {
             start_download,
             upsert_discovered_source,
             discover_streams,
-            layout_review_webview
+            layout_review_webview,
+            pick_save_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

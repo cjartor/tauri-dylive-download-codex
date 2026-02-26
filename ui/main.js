@@ -110,10 +110,22 @@ listEl.addEventListener('click', async (event) => {
   render();
 
   try {
+    const selectedPath = await tauri.core.invoke('pick_save_path', {
+      fileName: current.title || fallbackTitle(),
+    });
+
+    if (!selectedPath) {
+      current.status = 'idle';
+      current.message = 'Cancelled';
+      render();
+      return;
+    }
+
     await tauri.core.invoke('start_download', {
       req: {
         m3u8Url: url,
         fileName: current.title || fallbackTitle(),
+        outputPath: selectedPath,
       },
     });
   } catch (err) {
