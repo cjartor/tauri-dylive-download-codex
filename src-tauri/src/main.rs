@@ -1,10 +1,13 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use tauri::webview::WebviewBuilder;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl};
 use tauri_plugin_dialog::DialogExt;
+use tokio::time::{sleep, Duration};
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +34,42 @@ struct DownloadEvent {
 struct DiscoveredSource {
     url: String,
     title: Option<String>,
+}
+
+#[derive(Default)]
+struct DownloadControl {
+    paused: Mutex<HashMap<String, bool>>,
+}
+
+impl DownloadControl {
+    fn register(&self, url: &str) {
+        if let Ok(mut map) = self.paused.lock() {
+            map.insert(url.to_string(), false);
+        }
+    }
+
+    fn remove(&self, url: &str) {
+        if let Ok(mut map) = self.paused.lock() {
+            map.remove(url);
+        }
+    }
+
+    fn set_paused(&self, url: &str, paused: bool) -> bool {
+        if let Ok(mut map) = self.paused.lock() {
+            if let Some(v) = map.get_mut(url) {
+                *v = paused;
+                return true;
+            }
+        }
+        false
+    }
+
+    fn is_paused(&self, url: &str) -> bool {
+        if let Ok(map) = self.paused.lock() {
+            return map.get(url).copied().unwrap_or(false);
+        }
+        false
+    }
 }
 
 const REVIEW_WEBVIEW_LABEL: &str = "review-webview";
@@ -140,7 +179,31 @@ async fn pick_save_path(app: tauri::AppHandle, file_name: Option<String>) -> Res
 }
 
 #[tauri::command]
-async fn start_download(app: tauri::AppHandle, req: DownloadRequest) -> Result<String, String> {
+fn pause_download(control: tauri::State<'_, DownloadControl>, url: String) -> Result<(), String> {
+    if control.set_paused(&url, true) {
+        Ok(())
+    } else {
+        Err("download task not found for pause".into())
+    }
+}
+
+#[tauri::command]
+fn resume_download(control: tauri::State<'_, DownloadControl>, url: String) -> Result<(), String> {
+    if control.set_paused(&url, false) {
+        Ok(())
+    } else {
+        Err("download task not found for resume".into())
+    }
+}
+
+#[tauri::command]
+async fn start_download(
+    app: tauri::AppHandle,
+    control: tauri::State<'_, DownloadControl>,
+    req: DownloadRequest,
+) -> Result<String, String> {
+    control.register(&req.m3u8_url);
+
     emit_download(
         &app,
         DownloadEvent {
@@ -178,28 +241,93 @@ async fn start_download(app: tauri::AppHandle, req: DownloadRequest) -> Result<S
         unique_path(&out_dir, &safe_name, "mp4")
     };
 
-    let first_playlist = fetch_text(&req.m3u8_url).await?;
-    let media_playlist_url = choose_media_playlist_url(&req.m3u8_url, &first_playlist)?;
-    let media_playlist = fetch_text(&media_playlist_url).await?;
-    let segments = parse_segments(&media_playlist_url, &media_playlist)?;
+    let first_playlist = match fetch_text(&req.m3u8_url).await {
+        Ok(v) => v,
+        Err(e) => {
+            control.remove(&req.m3u8_url);
+            return Err(e);
+        }
+    };
+    let media_playlist_url = match choose_media_playlist_url(&req.m3u8_url, &first_playlist) {
+        Ok(v) => v,
+        Err(e) => {
+            control.remove(&req.m3u8_url);
+            return Err(e);
+        }
+    };
+    let media_playlist = match fetch_text(&media_playlist_url).await {
+        Ok(v) => v,
+        Err(e) => {
+            control.remove(&req.m3u8_url);
+            return Err(e);
+        }
+    };
+    let segments = match parse_segments(&media_playlist_url, &media_playlist) {
+        Ok(v) => v,
+        Err(e) => {
+            control.remove(&req.m3u8_url);
+            return Err(e);
+        }
+    };
 
     if segments.is_empty() {
+        control.remove(&req.m3u8_url);
         return Err("no downloadable ts segments found in m3u8".into());
     }
 
     let mut file = File::create(&output_file).map_err(|e| format!("create file failed: {e}"))?;
     let total = segments.len();
+    let mut paused_emitted = false;
 
     for (idx, seg_url) in segments.iter().enumerate() {
-        let bytes = reqwest::get(seg_url)
-            .await
-            .map_err(|e| format!("segment request failed: {e}"))?
-            .bytes()
-            .await
-            .map_err(|e| format!("segment read failed: {e}"))?;
+        while control.is_paused(&req.m3u8_url) {
+            if !paused_emitted {
+                emit_download(
+                    &app,
+                    DownloadEvent {
+                        url: req.m3u8_url.clone(),
+                        status: "paused".into(),
+                        progress: (((idx) as f32 / total as f32) * 100.0).round() as u8,
+                        message: Some("download paused".into()),
+                        output_path: None,
+                    },
+                );
+                paused_emitted = true;
+            }
+            sleep(Duration::from_millis(300)).await;
+        }
+        if paused_emitted {
+            emit_download(
+                &app,
+                DownloadEvent {
+                    url: req.m3u8_url.clone(),
+                    status: "in_progress".into(),
+                    progress: (((idx) as f32 / total as f32) * 100.0).round() as u8,
+                    message: Some("download resumed".into()),
+                    output_path: None,
+                },
+            );
+            paused_emitted = false;
+        }
 
-        file.write_all(&bytes)
-            .map_err(|e| format!("write segment failed: {e}"))?;
+        let bytes = match reqwest::get(seg_url).await {
+            Ok(resp) => match resp.bytes().await {
+                Ok(v) => v,
+                Err(e) => {
+                    control.remove(&req.m3u8_url);
+                    return Err(format!("segment read failed: {e}"));
+                }
+            },
+            Err(e) => {
+                control.remove(&req.m3u8_url);
+                return Err(format!("segment request failed: {e}"));
+            }
+        };
+
+        if let Err(e) = file.write_all(&bytes) {
+            control.remove(&req.m3u8_url);
+            return Err(format!("write segment failed: {e}"));
+        }
 
         let pct = (((idx + 1) as f32 / total as f32) * 100.0).round() as u8;
         emit_download(
@@ -215,6 +343,7 @@ async fn start_download(app: tauri::AppHandle, req: DownloadRequest) -> Result<S
     }
 
     let out = output_file.to_string_lossy().to_string();
+    control.remove(&req.m3u8_url);
     emit_download(
         &app,
         DownloadEvent {
@@ -367,6 +496,7 @@ fn resolve_url(base: &str, candidate: &str) -> Result<String, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(DownloadControl::default())
         .setup(|app| {
             let handle = app.handle().clone();
             ensure_review_webview(&handle)?;
@@ -377,7 +507,9 @@ pub fn run() {
             upsert_discovered_source,
             discover_streams,
             layout_review_webview,
-            pick_save_path
+            pick_save_path,
+            pause_download,
+            resume_download
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

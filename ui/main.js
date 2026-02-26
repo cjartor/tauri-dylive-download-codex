@@ -49,7 +49,9 @@ function render() {
       <h4>${escapeHtml(displayTitle)}</h4>
       <div class="url">${escapeHtml(item.url)}</div>
       <div class="row">
-        <button data-url="${encodeURIComponent(item.url)}">Download</button>
+        <button data-action="download" data-url="${encodeURIComponent(item.url)}">Download</button>
+        <button data-action="pause" data-url="${encodeURIComponent(item.url)}">Pause</button>
+        <button data-action="resume" data-url="${encodeURIComponent(item.url)}">Resume</button>
         <span class="status">${escapeHtml(statusLabel(item))}</span>
       </div>
     `;
@@ -59,6 +61,7 @@ function render() {
 
 function statusLabel(item) {
   if (item.status === 'in_progress') return `${item.progress || 0}% ${item.message || ''}`.trim();
+  if (item.status === 'paused') return `Paused ${item.progress || 0}%`;
   if (item.status === 'success') return `Done: ${item.outputPath || ''}`;
   if (item.status === 'failed') return `Failed: ${item.message || ''}`;
   if (item.status === 'started') return 'Starting...';
@@ -94,12 +97,41 @@ toggleSidebarBtn.addEventListener('click', () => {
 });
 
 listEl.addEventListener('click', async (event) => {
-  const btn = event.target.closest('button[data-url]');
+  const btn = event.target.closest('button[data-action][data-url]');
   if (!btn) return;
 
+  const action = btn.dataset.action;
   const url = decodeURIComponent(btn.dataset.url);
   const current = state.sources.get(url);
   if (!current) return;
+
+  if (action === 'pause') {
+    try {
+      await tauri.core.invoke('pause_download', { url });
+      current.status = 'paused';
+      current.message = 'Paused by user';
+      render();
+    } catch (err) {
+      current.status = 'failed';
+      current.message = String(err);
+      render();
+    }
+    return;
+  }
+
+  if (action === 'resume') {
+    try {
+      await tauri.core.invoke('resume_download', { url });
+      current.status = 'in_progress';
+      current.message = 'Resuming...';
+      render();
+    } catch (err) {
+      current.status = 'failed';
+      current.message = String(err);
+      render();
+    }
+    return;
+  }
 
   current.status = 'started';
   current.progress = 0;
