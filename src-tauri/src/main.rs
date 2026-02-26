@@ -2,9 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use tauri::Emitter;
-use tauri::Manager;
-use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri::webview::WebviewBuilder;
+use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl};
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,42 +31,91 @@ struct DiscoveredSource {
     title: Option<String>,
 }
 
-const REVIEW_WINDOW_LABEL: &str = "review";
+const REVIEW_WEBVIEW_LABEL: &str = "review-webview";
 const REVIEW_URL: &str = "https://anchor.douyin.com/anchor/review";
 
-#[tauri::command]
-fn open_review_window(app: tauri::AppHandle) -> Result<(), String> {
-    ensure_review_window(&app)
-}
-
-#[tauri::command]
-fn discover_streams(app: tauri::AppHandle) -> Result<(), String> {
-    ensure_review_window(&app)?;
-    let win = app
-        .get_webview_window(REVIEW_WINDOW_LABEL)
-        .ok_or_else(|| "review window not available".to_string())?;
-
-    let script = r#"
+const REVIEW_COLLECTOR_INIT: &str = r#"
 (() => {
-  const title = (document.querySelector('.basic-name')?.textContent || '').trim();
+  if (window.__TAURI_M3U8_COLLECTOR_INSTALLED__) return;
+  window.__TAURI_M3U8_COLLECTOR_INSTALLED__ = true;
+
   const seen = new Set();
+  const title = () => (document.querySelector('.basic-name')?.textContent || '').trim();
   const emit = (url) => {
     if (!url || !url.includes('.m3u8') || seen.has(url)) return;
     seen.add(url);
     if (window.__TAURI__?.core?.invoke) {
-      window.__TAURI__.core.invoke('upsert_discovered_source', { entry: { url, title } }).catch(() => {});
+      window.__TAURI__.core.invoke('upsert_discovered_source', {
+        entry: { url, title: title() }
+      }).catch(() => {});
     }
   };
-  for (const e of performance.getEntriesByType('resource')) emit(e.name || '');
-  for (const node of document.querySelectorAll('video, source')) {
-    emit(node.currentSrc || node.src || '');
-  }
+
+  window.__TAURI_M3U8_DISCOVER__ = () => {
+    for (const e of performance.getEntriesByType('resource')) emit(e.name || '');
+    for (const node of document.querySelectorAll('video, source')) {
+      emit(node.currentSrc || node.src || '');
+    }
+  };
+
+  const oldFetch = window.fetch;
+  window.fetch = async (...args) => {
+    const input = args[0];
+    const url = typeof input === 'string' ? input : input?.url;
+    emit(url || '');
+    return oldFetch(...args);
+  };
+
+  const oldOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+    emit(String(url || ''));
+    return oldOpen.call(this, method, url, ...rest);
+  };
+
+  setInterval(() => {
+    if (window.__TAURI_M3U8_DISCOVER__) window.__TAURI_M3U8_DISCOVER__();
+  }, 2000);
 })();
 "#;
 
-    win.eval(script)
-        .map_err(|e| format!("discover eval failed: {e}"))?;
+#[tauri::command]
+fn layout_review_webview(
+    app: tauri::AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    ensure_review_webview(&app)?;
+    let review = app
+        .get_webview(REVIEW_WEBVIEW_LABEL)
+        .ok_or_else(|| "review webview not found".to_string())?;
+
+    let safe_x = x.max(0.0);
+    let safe_y = y.max(0.0);
+    let safe_w = width.max(320.0);
+    let safe_h = height.max(200.0);
+
+    review
+        .set_position(LogicalPosition::new(safe_x, safe_y))
+        .map_err(|e| format!("set review webview position failed: {e}"))?;
+    review
+        .set_size(LogicalSize::new(safe_w, safe_h))
+        .map_err(|e| format!("set review webview size failed: {e}"))?;
+
     Ok(())
+}
+
+#[tauri::command]
+fn discover_streams(app: tauri::AppHandle) -> Result<(), String> {
+    ensure_review_webview(&app)?;
+    let review = app
+        .get_webview(REVIEW_WEBVIEW_LABEL)
+        .ok_or_else(|| "review webview not found".to_string())?;
+
+    review
+        .eval("window.__TAURI_M3U8_DISCOVER__ && window.__TAURI_M3U8_DISCOVER__();")
+        .map_err(|e| format!("discover eval failed: {e}"))
 }
 
 #[tauri::command]
@@ -161,28 +209,32 @@ async fn upsert_discovered_source(
         .map_err(|e| format!("emit failed: {e}"))
 }
 
-fn emit_download(app: &tauri::AppHandle, evt: DownloadEvent) {
-    let _ = app.emit("download-status", evt);
-}
-
-fn ensure_review_window(app: &tauri::AppHandle) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window(REVIEW_WINDOW_LABEL) {
-        win.show().map_err(|e| format!("show review window failed: {e}"))?;
-        win.set_focus()
-            .map_err(|e| format!("focus review window failed: {e}"))?;
+fn ensure_review_webview(app: &tauri::AppHandle) -> Result<(), String> {
+    if app.get_webview(REVIEW_WEBVIEW_LABEL).is_some() {
         return Ok(());
     }
 
-    let url = Url::parse(REVIEW_URL).map_err(|e| format!("invalid review url: {e}"))?;
+    let main_window = app
+        .get_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
 
-    WebviewWindowBuilder::new(app, REVIEW_WINDOW_LABEL, WebviewUrl::External(url))
-        .title("Douyin Review")
-        .inner_size(1200.0, 900.0)
-        .resizable(true)
-        .build()
-        .map_err(|e| format!("create review window failed: {e}"))?;
+    let url = Url::parse(REVIEW_URL).map_err(|e| format!("invalid review url: {e}"))?;
+    let builder = WebviewBuilder::new(REVIEW_WEBVIEW_LABEL, WebviewUrl::External(url))
+        .initialization_script_for_all_frames(REVIEW_COLLECTOR_INIT);
+
+    main_window
+        .add_child(
+            builder,
+            LogicalPosition::new(0.0, 64.0),
+            LogicalSize::new(1024.0, 700.0),
+        )
+        .map_err(|e| format!("create child review webview failed: {e}"))?;
 
     Ok(())
+}
+
+fn emit_download(app: &tauri::AppHandle, evt: DownloadEvent) {
+    let _ = app.emit("download-status", evt);
 }
 
 fn sanitize_name(raw: &str) -> String {
@@ -287,14 +339,14 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             let handle = app.handle().clone();
-            ensure_review_window(&handle)?;
+            ensure_review_webview(&handle)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             start_download,
             upsert_discovered_source,
-            open_review_window,
-            discover_streams
+            discover_streams,
+            layout_review_webview
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

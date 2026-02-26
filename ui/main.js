@@ -8,7 +8,6 @@ const discoverBtn = document.getElementById('discover-btn');
 const clearBtn = document.getElementById('clear-btn');
 const toggleSidebarBtn = document.getElementById('toggle-sidebar');
 const sidebarEl = document.getElementById('sidebar');
-const openReviewBtn = document.getElementById('open-review-btn');
 
 const tauri = window.__TAURI__;
 
@@ -86,14 +85,6 @@ discoverBtn.addEventListener('click', async () => {
   }
 });
 
-openReviewBtn.addEventListener('click', async () => {
-  try {
-    await tauri.core.invoke('open_review_window');
-  } catch (err) {
-    console.error('Open review window failed:', err);
-  }
-});
-
 clearBtn.addEventListener('click', () => {
   state.sources.clear();
   render();
@@ -102,6 +93,7 @@ clearBtn.addEventListener('click', () => {
 toggleSidebarBtn.addEventListener('click', () => {
   state.sidebarOpen = !state.sidebarOpen;
   sidebarEl.style.display = state.sidebarOpen ? 'flex' : 'none';
+  syncReviewWebviewLayout();
 });
 
 listEl.addEventListener('click', async (event) => {
@@ -148,5 +140,30 @@ if (tauri?.event?.listen) {
     render();
   });
 }
+
+let layoutFrame = null;
+function syncReviewWebviewLayout() {
+  if (!tauri?.core?.invoke) return;
+  const topbarHeight = 64;
+  const sidebarWidth = state.sidebarOpen ? 420 : 0;
+  const width = Math.max(320, window.innerWidth - sidebarWidth);
+  const height = Math.max(220, window.innerHeight - topbarHeight);
+
+  tauri.core.invoke('layout_review_webview', {
+    x: 0,
+    y: topbarHeight,
+    width,
+    height,
+  }).catch((err) => {
+    console.error('Layout review webview failed:', err);
+  });
+}
+
+window.addEventListener('resize', () => {
+  if (layoutFrame) cancelAnimationFrame(layoutFrame);
+  layoutFrame = requestAnimationFrame(syncReviewWebviewLayout);
+});
+
+syncReviewWebviewLayout();
 
 render();

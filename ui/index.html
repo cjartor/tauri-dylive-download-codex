@@ -49,20 +49,17 @@
         border-right: 1px solid var(--line);
         min-height: 0;
         padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
       }
-      .card {
+      .placeholder {
         background: #fff;
         border: 1px solid var(--line);
         border-radius: 10px;
         padding: 14px;
       }
-      .card h3 {
+      .placeholder h3 {
         margin: 0 0 8px;
       }
-      .card p {
+      .placeholder p {
         margin: 6px 0;
         color: var(--muted);
       }
@@ -115,13 +112,6 @@
         padding: 6px 10px;
         cursor: pointer;
       }
-      .card button {
-        border: 1px solid var(--line);
-        background: #fff;
-        border-radius: 8px;
-        padding: 8px 12px;
-        cursor: pointer;
-      }
       .status { font-size: 12px; color: var(--muted); }
       .warning {
         margin: 8px 12px;
@@ -137,26 +127,18 @@
     <header class="topbar">
       <button id="discover-btn">Discover Streams</button>
       <button id="toggle-sidebar">Toggle Sidebar</button>
-      <div class="hint">Top controls are app-owned (outside page DOM), so they remain stable across page route changes.</div>
+      <div class="hint">Single-window multi-WebView mode: left area is Douyin page, right side is downloader panel.</div>
     </header>
     <main class="layout">
       <section class="workspace">
-        <div class="card">
-          <h3>Review Window</h3>
+        <div class="placeholder">
+          <h3>Douyin Review WebView</h3>
           <p>
-            Douyin blocks iframe embedding via CSP (<code>frame-ancestors</code>), so the review page is opened in a dedicated
-            native WebView window.
+            This area is occupied by a child WebView in the same window.
           </p>
           <p>
-            Keep that window active for browsing. Use this panel to trigger discovery and downloads.
+            If you can still see this card after startup, the child WebView failed to mount.
           </p>
-          <button id="open-review-btn">Open / Focus Review Window</button>
-        </div>
-        <div class="card">
-          <h3>How Discovery Works</h3>
-          <p>1. Operate in the review window so m3u8 requests occur.</p>
-          <p>2. Click <b>Discover Streams</b> in this panel.</p>
-          <p>3. Download from the right sidebar.</p>
         </div>
       </section>
       <aside class="sidebar" id="sidebar">
