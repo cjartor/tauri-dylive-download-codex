@@ -42,18 +42,29 @@
       .topbar .hint { color: var(--muted); font-size: 13px; }
       .layout {
         display: grid;
-        grid-template-columns: 1fr 360px;
+        grid-template-columns: 1fr 420px;
         min-height: 0;
       }
-      .viewer {
+      .workspace {
         border-right: 1px solid var(--line);
         min-height: 0;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
       }
-      iframe {
-        width: 100%;
-        height: 100%;
-        border: 0;
+      .card {
         background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px;
+      }
+      .card h3 {
+        margin: 0 0 8px;
+      }
+      .card p {
+        margin: 6px 0;
+        color: var(--muted);
       }
       .sidebar {
         background: var(--panel);
@@ -104,6 +115,13 @@
         padding: 6px 10px;
         cursor: pointer;
       }
+      .card button {
+        border: 1px solid var(--line);
+        background: #fff;
+        border-radius: 8px;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
       .status { font-size: 12px; color: var(--muted); }
       .warning {
         margin: 8px 12px;
@@ -122,8 +140,24 @@
       <div class="hint">Top controls are app-owned (outside page DOM), so they remain stable across page route changes.</div>
     </header>
     <main class="layout">
-      <section class="viewer">
-        <iframe id="target-frame" src="https://anchor.douyin.com/anchor/review"></iframe>
+      <section class="workspace">
+        <div class="card">
+          <h3>Review Window</h3>
+          <p>
+            Douyin blocks iframe embedding via CSP (<code>frame-ancestors</code>), so the review page is opened in a dedicated
+            native WebView window.
+          </p>
+          <p>
+            Keep that window active for browsing. Use this panel to trigger discovery and downloads.
+          </p>
+          <button id="open-review-btn">Open / Focus Review Window</button>
+        </div>
+        <div class="card">
+          <h3>How Discovery Works</h3>
+          <p>1. Operate in the review window so m3u8 requests occur.</p>
+          <p>2. Click <b>Discover Streams</b> in this panel.</p>
+          <p>3. Download from the right sidebar.</p>
+        </div>
       </section>
       <aside class="sidebar" id="sidebar">
         <div class="sidebar-head">

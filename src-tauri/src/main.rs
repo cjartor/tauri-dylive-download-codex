@@ -3,6 +3,8 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::Emitter;
+use tauri::Manager;
+use tauri::{WebviewUrl, WebviewWindowBuilder};
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,6 +30,44 @@ struct DownloadEvent {
 struct DiscoveredSource {
     url: String,
     title: Option<String>,
+}
+
+const REVIEW_WINDOW_LABEL: &str = "review";
+const REVIEW_URL: &str = "https://anchor.douyin.com/anchor/review";
+
+#[tauri::command]
+fn open_review_window(app: tauri::AppHandle) -> Result<(), String> {
+    ensure_review_window(&app)
+}
+
+#[tauri::command]
+fn discover_streams(app: tauri::AppHandle) -> Result<(), String> {
+    ensure_review_window(&app)?;
+    let win = app
+        .get_webview_window(REVIEW_WINDOW_LABEL)
+        .ok_or_else(|| "review window not available".to_string())?;
+
+    let script = r#"
+(() => {
+  const title = (document.querySelector('.basic-name')?.textContent || '').trim();
+  const seen = new Set();
+  const emit = (url) => {
+    if (!url || !url.includes('.m3u8') || seen.has(url)) return;
+    seen.add(url);
+    if (window.__TAURI__?.core?.invoke) {
+      window.__TAURI__.core.invoke('upsert_discovered_source', { entry: { url, title } }).catch(() => {});
+    }
+  };
+  for (const e of performance.getEntriesByType('resource')) emit(e.name || '');
+  for (const node of document.querySelectorAll('video, source')) {
+    emit(node.currentSrc || node.src || '');
+  }
+})();
+"#;
+
+    win.eval(script)
+        .map_err(|e| format!("discover eval failed: {e}"))?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -123,6 +163,26 @@ async fn upsert_discovered_source(
 
 fn emit_download(app: &tauri::AppHandle, evt: DownloadEvent) {
     let _ = app.emit("download-status", evt);
+}
+
+fn ensure_review_window(app: &tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(REVIEW_WINDOW_LABEL) {
+        win.show().map_err(|e| format!("show review window failed: {e}"))?;
+        win.set_focus()
+            .map_err(|e| format!("focus review window failed: {e}"))?;
+        return Ok(());
+    }
+
+    let url = Url::parse(REVIEW_URL).map_err(|e| format!("invalid review url: {e}"))?;
+
+    WebviewWindowBuilder::new(app, REVIEW_WINDOW_LABEL, WebviewUrl::External(url))
+        .title("Douyin Review")
+        .inner_size(1200.0, 900.0)
+        .resizable(true)
+        .build()
+        .map_err(|e| format!("create review window failed: {e}"))?;
+
+    Ok(())
 }
 
 fn sanitize_name(raw: &str) -> String {
@@ -225,7 +285,17 @@ fn resolve_url(base: &str, candidate: &str) -> Result<String, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![start_download, upsert_discovered_source])
+        .setup(|app| {
+            let handle = app.handle().clone();
+            ensure_review_window(&handle)?;
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            start_download,
+            upsert_discovered_source,
+            open_review_window,
+            discover_streams
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

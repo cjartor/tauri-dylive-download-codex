@@ -4,11 +4,11 @@ const state = {
 };
 
 const listEl = document.getElementById('source-list');
-const frameEl = document.getElementById('target-frame');
 const discoverBtn = document.getElementById('discover-btn');
 const clearBtn = document.getElementById('clear-btn');
 const toggleSidebarBtn = document.getElementById('toggle-sidebar');
 const sidebarEl = document.getElementById('sidebar');
+const openReviewBtn = document.getElementById('open-review-btn');
 
 const tauri = window.__TAURI__;
 
@@ -78,70 +78,20 @@ function escapeHtml(input) {
     .replaceAll("'", '&#039;');
 }
 
-function attemptFrameDiscovery() {
+discoverBtn.addEventListener('click', async () => {
   try {
-    const frameWin = frameEl.contentWindow;
-    const frameDoc = frameWin?.document;
-    if (!frameWin || !frameDoc) return;
-
-    const title = frameDoc.querySelector('.basic-name')?.textContent?.trim() || '';
-    const resources = frameWin.performance?.getEntriesByType?.('resource') || [];
-
-    for (const r of resources) {
-      const name = r.name || '';
-      if (name.includes('.m3u8')) {
-        upsertSource({ url: name, title });
-      }
-    }
-
-    for (const media of frameDoc.querySelectorAll('video, source')) {
-      const src = media.currentSrc || media.src || '';
-      if (src.includes('.m3u8')) {
-        upsertSource({ url: src, title });
-      }
-    }
+    await tauri.core.invoke('discover_streams');
   } catch (err) {
-    console.warn('Cross-origin frame read blocked:', err);
+    console.error('Discovery failed:', err);
   }
-}
+});
 
-function installLocalCollectorHooks() {
-  const seen = new Set();
-
-  const capture = (url) => {
-    if (!url || seen.has(url)) return;
-    seen.add(url);
-    if (url.includes('.m3u8')) {
-      const title = document.querySelector('.basic-name')?.textContent?.trim() || '';
-      upsertSource({ url, title });
-      tauri?.core?.invoke?.('upsert_discovered_source', { entry: { url, title } }).catch(() => {});
-    }
-  };
-
-  const oldFetch = window.fetch;
-  window.fetch = async (...args) => {
-    const input = args[0];
-    const url = typeof input === 'string' ? input : input?.url;
-    capture(url || '');
-    return oldFetch(...args);
-  };
-
-  const oldOpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-    capture(String(url || ''));
-    return oldOpen.call(this, method, url, ...rest);
-  };
-
-  setInterval(() => {
-    for (const e of performance.getEntriesByType('resource')) {
-      capture(e.name || '');
-    }
-  }, 1500);
-}
-
-discoverBtn.addEventListener('click', () => {
-  attemptFrameDiscovery();
-  render();
+openReviewBtn.addEventListener('click', async () => {
+  try {
+    await tauri.core.invoke('open_review_window');
+  } catch (err) {
+    console.error('Open review window failed:', err);
+  }
 });
 
 clearBtn.addEventListener('click', () => {
@@ -180,8 +130,6 @@ listEl.addEventListener('click', async (event) => {
     render();
   }
 });
-
-installLocalCollectorHooks();
 
 if (tauri?.event?.listen) {
   tauri.event.listen('stream-discovered', (evt) => {
