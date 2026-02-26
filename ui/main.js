@@ -21,7 +21,7 @@ function upsertSource(entry) {
 
   const existing = state.sources.get(url) || {
     url,
-    title: 'Untitled Video',
+    title: '',
     status: 'idle',
     progress: 0,
     message: '',
@@ -38,18 +38,15 @@ function sanitizeTitle(raw) {
   return (raw || '').replace(/\s+/g, ' ').trim();
 }
 
-function fallbackTitle() {
-  return `video_${Date.now()}`;
-}
-
 function render() {
   const entries = [...state.sources.values()];
   listEl.innerHTML = '';
   for (const item of entries) {
+    const displayTitle = item.title || '(missing .basic-name)';
     const li = document.createElement('li');
     li.className = 'item';
     li.innerHTML = `
-      <h4>${escapeHtml(item.title || fallbackTitle())}</h4>
+      <h4>${escapeHtml(displayTitle)}</h4>
       <div class="url">${escapeHtml(item.url)}</div>
       <div class="row">
         <button data-url="${encodeURIComponent(item.url)}">Download</button>
@@ -110,8 +107,16 @@ listEl.addEventListener('click', async (event) => {
   render();
 
   try {
+    const baseName = sanitizeTitle(current.title);
+    if (!baseName) {
+      current.status = 'failed';
+      current.message = 'Missing .basic-name; trigger discovery on a loaded video first.';
+      render();
+      return;
+    }
+
     const selectedPath = await tauri.core.invoke('pick_save_path', {
-      fileName: current.title || fallbackTitle(),
+      fileName: baseName,
     });
 
     if (!selectedPath) {
@@ -124,7 +129,7 @@ listEl.addEventListener('click', async (event) => {
     await tauri.core.invoke('start_download', {
       req: {
         m3u8Url: url,
-        fileName: current.title || fallbackTitle(),
+        fileName: baseName,
         outputPath: selectedPath,
       },
     });
