@@ -8,11 +8,11 @@
 
   <rect x="24" y="24" width="464" height="464" rx="112" fill="url(#bg)"/>
 
-  <circle cx="256" cy="256" r="136" fill="#ffffff" fill-opacity="0.14"/>
+  <!-- centered play icon -->
+  <polygon points="220,176 324,236 220,296" fill="#F8FDFF"/>
 
-  <polygon points="228,198 330,256 228,314" fill="#F8FDFF"/>
-
-  <rect x="168" y="340" width="176" height="24" rx="12" fill="#F8FDFF"/>
-  <rect x="246" y="242" width="20" height="108" rx="10" fill="#F8FDFF"/>
-  <path d="M222 314L256 350L290 314" fill="none" stroke="#F8FDFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- centered download icon -->
+  <rect x="246" y="270" width="20" height="92" rx="10" fill="#F8FDFF"/>
+  <path d="M220 332L256 370L292 332" fill="none" stroke="#F8FDFF" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="170" y="384" width="172" height="24" rx="12" fill="#F8FDFF"/>
 </svg>
