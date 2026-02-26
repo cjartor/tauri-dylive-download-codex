@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
