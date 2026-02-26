@@ -126,7 +126,7 @@ async fn pick_save_path(app: tauri::AppHandle, file_name: Option<String>) -> Res
     let path = app
         .dialog()
         .file()
-        .set_file_name(format!("{suggested}.ts"))
+        .set_file_name(format!("{suggested}.mp4"))
         .blocking_save_file();
 
     if let Some(file_path) = path {
@@ -160,9 +160,7 @@ async fn start_download(app: tauri::AppHandle, req: DownloadRequest) -> Result<S
     );
     let output_file = if let Some(selected) = req.output_path.clone() {
         let mut p = PathBuf::from(selected);
-        if p.extension().is_none() {
-            p.set_extension("ts");
-        }
+        p.set_extension("mp4");
         if let Some(parent) = p.parent() {
             if !parent.exists() {
                 fs::create_dir_all(parent).map_err(|e| format!("create output dir failed: {e}"))?;
@@ -177,7 +175,7 @@ async fn start_download(app: tauri::AppHandle, req: DownloadRequest) -> Result<S
         if !out_dir.exists() {
             fs::create_dir_all(&out_dir).map_err(|e| format!("create output dir failed: {e}"))?;
         }
-        unique_path(&out_dir, &safe_name, "ts")
+        unique_path(&out_dir, &safe_name, "mp4")
     };
 
     let first_playlist = fetch_text(&req.m3u8_url).await?;
