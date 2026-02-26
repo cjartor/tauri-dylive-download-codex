@@ -256,8 +256,8 @@ fn ensure_review_webview(app: &tauri::AppHandle) -> Result<(), String> {
     main_window
         .add_child(
             builder,
-            LogicalPosition::new(0.0, 84.0),
-            LogicalSize::new(1024.0, 680.0),
+            LogicalPosition::new(0.0, 120.0),
+            LogicalSize::new(1024.0, 640.0),
         )
         .map_err(|e| format!("create child review webview failed: {e}"))?;
 

@@ -154,12 +154,13 @@ if (tauri?.event?.listen) {
 }
 
 let layoutFrame = null;
-const TOP_GAP = 12;
+const TOP_GAP = 32;
 
 function topbarOffset() {
   const topbar = document.querySelector('.topbar');
-  const h = topbar?.getBoundingClientRect?.().height ?? 64;
-  return Math.ceil(h + TOP_GAP);
+  const rect = topbar?.getBoundingClientRect?.();
+  const bottom = rect?.bottom ?? 64;
+  return Math.ceil(bottom + TOP_GAP);
 }
 
 function syncReviewWebviewLayout() {
