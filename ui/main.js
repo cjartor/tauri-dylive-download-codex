@@ -142,9 +142,17 @@ if (tauri?.event?.listen) {
 }
 
 let layoutFrame = null;
+const TOP_GAP = 12;
+
+function topbarOffset() {
+  const topbar = document.querySelector('.topbar');
+  const h = topbar?.getBoundingClientRect?.().height ?? 64;
+  return Math.ceil(h + TOP_GAP);
+}
+
 function syncReviewWebviewLayout() {
   if (!tauri?.core?.invoke) return;
-  const topbarHeight = 64;
+  const topbarHeight = topbarOffset();
   const sidebarWidth = state.sidebarOpen ? 420 : 0;
   const width = Math.max(320, window.innerWidth - sidebarWidth);
   const height = Math.max(220, window.innerHeight - topbarHeight);
@@ -165,5 +173,7 @@ window.addEventListener('resize', () => {
 });
 
 syncReviewWebviewLayout();
+setTimeout(syncReviewWebviewLayout, 120);
+setTimeout(syncReviewWebviewLayout, 400);
 
 render();
