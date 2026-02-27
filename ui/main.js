@@ -42,7 +42,7 @@ function render() {
   const entries = [...state.sources.values()];
   listEl.innerHTML = '';
   for (const item of entries) {
-    const displayTitle = item.title || '（缺少 .basic-name）';
+    const displayTitle = item.title || '（缺少项目标题）';
     const actions = renderActions(item);
     const li = document.createElement('li');
     li.className = 'item';
@@ -149,16 +149,16 @@ listEl.addEventListener('click', async (event) => {
   render();
 
   try {
-    const baseName = sanitizeTitle(current.title);
-    if (!baseName) {
+    const projectTitle = sanitizeTitle(current.title);
+    if (!projectTitle) {
       current.status = 'failed';
-      current.message = '缺少 .basic-name，请先在视频已加载页面点击“发现视频源”。';
+      current.message = '缺少项目标题，请先在视频已加载页面点击“发现视频源”。';
       render();
       return;
     }
 
     const selectedPath = await tauri.core.invoke('pick_save_path', {
-      fileName: baseName,
+      fileName: projectTitle,
     });
 
     if (!selectedPath) {
@@ -171,7 +171,7 @@ listEl.addEventListener('click', async (event) => {
     await tauri.core.invoke('start_download', {
       req: {
         m3u8Url: url,
-        fileName: baseName,
+        fileName: projectTitle,
         outputPath: selectedPath,
       },
     });

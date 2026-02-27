@@ -82,7 +82,14 @@ const REVIEW_COLLECTOR_INIT: &str = r#"
   window.__TAURI_M3U8_COLLECTOR_INSTALLED__ = true;
 
   const seen = new Set();
-  const title = () => (document.querySelector('.basic-name')?.textContent || '').trim();
+  const title = () => {
+    const selectors = ['.basic-name', '.project-title', '.video-title', '[data-e2e=\"project-title\"]'];
+    for (const sel of selectors) {
+      const t = (document.querySelector(sel)?.textContent || '').trim();
+      if (t) return t;
+    }
+    return (document.title || '').trim();
+  };
   const emit = (url) => {
     if (!url || !url.includes('.m3u8') || seen.has(url)) return;
     seen.add(url);
@@ -527,4 +534,3 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
