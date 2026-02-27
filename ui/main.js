@@ -43,20 +43,30 @@ function render() {
   listEl.innerHTML = '';
   for (const item of entries) {
     const displayTitle = item.title || '（缺少 .basic-name）';
+    const actions = renderActions(item);
     const li = document.createElement('li');
     li.className = 'item';
     li.innerHTML = `
       <h4>${escapeHtml(displayTitle)}</h4>
       <div class="url">${escapeHtml(item.url)}</div>
       <div class="row">
-        <button data-action="download" data-url="${encodeURIComponent(item.url)}">下载</button>
-        <button data-action="pause" data-url="${encodeURIComponent(item.url)}">暂停</button>
-        <button data-action="resume" data-url="${encodeURIComponent(item.url)}">继续</button>
+        ${actions}
         <span class="status">${escapeHtml(statusLabel(item))}</span>
       </div>
     `;
     listEl.appendChild(li);
   }
+}
+
+function renderActions(item) {
+  const u = encodeURIComponent(item.url);
+  if (item.status === 'started' || item.status === 'in_progress') {
+    return `<button data-action="pause" data-url="${u}">暂停</button>`;
+  }
+  if (item.status === 'paused') {
+    return `<button data-action="resume" data-url="${u}">继续</button>`;
+  }
+  return `<button data-action="download" data-url="${u}">下载</button>`;
 }
 
 function statusLabel(item) {
