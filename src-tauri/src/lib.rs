@@ -387,13 +387,18 @@ async fn start_download(
                 let pct = ((next_to_write as f32 / total as f32) * 100.0).round() as u8;
                 let elapsed = started_at.elapsed().as_secs_f64().max(0.001);
                 let speed_kbps = (written_bytes as f64 / elapsed) / 1024.0;
+                let speed_text = if speed_kbps >= 1024.0 {
+                    format!("{:.2} MB/s", speed_kbps / 1024.0)
+                } else {
+                    format!("{:.1} KB/s", speed_kbps)
+                };
                 emit_download(
                     &app,
                     DownloadEvent {
                         url: req.m3u8_url.clone(),
                         status: "in_progress".into(),
                         progress: pct,
-                        message: Some(format!("已下载 {}/{}，{:.1} KB/s", next_to_write, total, speed_kbps)),
+                        message: Some(format!("已下载 {}/{}，{}", next_to_write, total, speed_text)),
                         output_path: None,
                     },
                 );
