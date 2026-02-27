@@ -1,157 +1,177 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Douyin M3U8 Downloader</title>
-    <style>
-      :root {
-        --bg: #f7f4ee;
-        --panel: #ffffff;
-        --ink: #1f2937;
-        --brand: #0a7f5a;
-        --muted: #6b7280;
-        --line: #d9dfe7;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "Avenir Next", "Helvetica Neue", sans-serif;
-        color: var(--ink);
-        background: radial-gradient(circle at top right, #e9fff5 0%, var(--bg) 55%);
-        height: 100vh;
-        display: grid;
-        grid-template-rows: 64px 1fr;
-      }
-      .topbar {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 0 16px;
-        border-bottom: 1px solid var(--line);
-        background: linear-gradient(90deg, #fff, #f4fffb);
-      }
-      .topbar button {
-        border: none;
-        background: var(--brand);
-        color: #fff;
-        border-radius: 10px;
-        padding: 10px 14px;
-        cursor: pointer;
-      }
-      .topbar .hint { color: var(--muted); font-size: 13px; }
-      .layout {
-        display: grid;
-        grid-template-columns: 1fr 420px;
-        min-height: 0;
-      }
-      .workspace {
-        border-right: 1px solid var(--line);
-        min-height: 0;
-        padding: 16px;
-      }
-      .placeholder {
-        background: #fff;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 14px;
-      }
-      .placeholder h3 {
-        margin: 0 0 8px;
-      }
-      .placeholder p {
-        margin: 6px 0;
-        color: var(--muted);
-      }
-      .sidebar {
-        background: var(--panel);
-        display: flex;
-        flex-direction: column;
-        min-height: 0;
-      }
-      .sidebar-head {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 14px;
-        border-bottom: 1px solid var(--line);
-      }
-      #source-list {
-        margin: 0;
-        padding: 12px;
-        list-style: none;
-        overflow: auto;
-        display: grid;
-        gap: 10px;
-      }
-      .item {
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 10px;
-      }
-      .item h4 {
-        margin: 0 0 6px;
-        font-size: 14px;
-      }
-      .url {
-        color: var(--muted);
-        font-size: 12px;
-        word-break: break-all;
-      }
-      .row {
-        margin-top: 8px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        gap: 8px;
-      }
-      .row button {
-        border: 1px solid var(--line);
-        background: #fff;
-        border-radius: 8px;
-        padding: 6px 10px;
-        cursor: pointer;
-      }
-      .status { font-size: 12px; color: var(--muted); }
-      .warning {
-        margin: 8px 12px;
-        padding: 10px;
-        border-radius: 8px;
-        background: #fff8e8;
-        color: #7c5600;
-        font-size: 12px;
-      }
-    </style>
-  </head>
-  <body>
-    <header class="topbar">
-      <button id="discover-btn">Discover Streams</button>
-      <button id="toggle-sidebar">Toggle Sidebar</button>
-      <div class="hint">Single-window multi-WebView mode: left area is Douyin page, right side is downloader panel.</div>
-    </header>
-    <main class="layout">
-      <section class="workspace">
-        <div class="placeholder">
-          <h3>Douyin Review WebView</h3>
-          <p>
-            This area is occupied by a child WebView in the same window.
-          </p>
-          <p>
-            If you can still see this card after startup, the child WebView failed to mount.
-          </p>
-        </div>
-      </section>
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-head">
-          <strong>Discovered M3U8 Sources</strong>
-          <button id="clear-btn">Clear</button>
-        </div>
-        <div class="warning">
-          Cross-origin pages may block direct DOM/network introspection from the wrapper. If automatic capture is blocked, paste m3u8 URLs via browser/devtools into the app's discovered feed by triggering network activity and refresh discovery.
-        </div>
-        <ul id="source-list"></ul>
-      </aside>
-    </main>
-    <script type="module" src="./main.js"></script>
-  </body>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>抖音 M3U8 下载器</title>
+  <style>
+    :root {
+      --bg: #f7f4ee;
+      --panel: #ffffff;
+      --ink: #1f2937;
+      --brand: #0a7f5a;
+      --muted: #6b7280;
+      --line: #d9dfe7;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Avenir Next", "Helvetica Neue", sans-serif;
+      color: var(--ink);
+      background: radial-gradient(circle at top right, #e9fff5 0%, var(--bg) 55%);
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 64px 1fr;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(90deg, #fff, #f4fffb);
+    }
+
+    .topbar button {
+      border: none;
+      background: var(--brand);
+      color: #fff;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+
+    .topbar .hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      min-height: 0;
+    }
+
+    .workspace {
+      border-right: 1px solid var(--line);
+      min-height: 0;
+      padding: 16px;
+    }
+
+    .placeholder {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 14px;
+    }
+
+    .placeholder h3 {
+      margin: 0 0 8px;
+    }
+
+    .placeholder p {
+      margin: 6px 0;
+      color: var(--muted);
+    }
+
+    .sidebar {
+      background: var(--panel);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .sidebar-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    #source-list {
+      margin: 0;
+      padding: 12px;
+      list-style: none;
+      overflow: auto;
+      display: grid;
+      gap: 10px;
+    }
+
+    .item {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+    }
+
+    .item h4 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+
+    .url {
+      color: var(--muted);
+      font-size: 12px;
+      word-break: break-all;
+    }
+
+    .row {
+      margin-top: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .row button {
+      border: 1px solid var(--line);
+      background: #fff;
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+
+    .status {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+  </style>
+</head>
+
+<body>
+  <header class="topbar">
+    <button id="discover-btn">发现视频源</button>
+    <button id="toggle-sidebar">切换侧边栏</button>
+    <div class="hint">单窗口多 WebView 模式：左侧为抖音页面，右侧为下载面板。</div>
+  </header>
+  <main class="layout">
+    <section class="workspace">
+      <div class="placeholder">
+        <h3>抖音复盘页面 WebView</h3>
+        <p>
+          该区域由同一窗口内的子 WebView 占用。
+        </p>
+        <p>
+          如果启动后仍看到此卡片，说明子 WebView 挂载失败。
+        </p>
+      </div>
+    </section>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <strong>已发现的 M3U8 源</strong>
+        <button id="clear-btn">清空</button>
+      </div>
+      <ul id="source-list"></ul>
+    </aside>
+  </main>
+  <script type="module" src="./main.js"></script>
+</body>
+
 </html>

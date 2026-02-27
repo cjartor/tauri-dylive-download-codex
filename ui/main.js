@@ -12,7 +12,7 @@ const sidebarEl = document.getElementById('sidebar');
 const tauri = window.__TAURI__;
 
 if (!tauri?.core?.invoke || !tauri?.event?.listen) {
-  console.warn('Tauri global API not available. Ensure withGlobalTauri is enabled.');
+  console.warn('未检测到 Tauri 全局 API，请确认 withGlobalTauri 已启用。');
 }
 
 function upsertSource(entry) {
@@ -42,16 +42,16 @@ function render() {
   const entries = [...state.sources.values()];
   listEl.innerHTML = '';
   for (const item of entries) {
-    const displayTitle = item.title || '(missing .basic-name)';
+    const displayTitle = item.title || '（缺少 .basic-name）';
     const li = document.createElement('li');
     li.className = 'item';
     li.innerHTML = `
       <h4>${escapeHtml(displayTitle)}</h4>
       <div class="url">${escapeHtml(item.url)}</div>
       <div class="row">
-        <button data-action="download" data-url="${encodeURIComponent(item.url)}">Download</button>
-        <button data-action="pause" data-url="${encodeURIComponent(item.url)}">Pause</button>
-        <button data-action="resume" data-url="${encodeURIComponent(item.url)}">Resume</button>
+        <button data-action="download" data-url="${encodeURIComponent(item.url)}">下载</button>
+        <button data-action="pause" data-url="${encodeURIComponent(item.url)}">暂停</button>
+        <button data-action="resume" data-url="${encodeURIComponent(item.url)}">继续</button>
         <span class="status">${escapeHtml(statusLabel(item))}</span>
       </div>
     `;
@@ -61,11 +61,11 @@ function render() {
 
 function statusLabel(item) {
   if (item.status === 'in_progress') return `${item.progress || 0}% ${item.message || ''}`.trim();
-  if (item.status === 'paused') return `Paused ${item.progress || 0}%`;
-  if (item.status === 'success') return `Done: ${item.outputPath || ''}`;
-  if (item.status === 'failed') return `Failed: ${item.message || ''}`;
-  if (item.status === 'started') return 'Starting...';
-  return 'Idle';
+  if (item.status === 'paused') return `已暂停 ${item.progress || 0}%`;
+  if (item.status === 'success') return `完成：${item.outputPath || ''}`;
+  if (item.status === 'failed') return `失败：${item.message || ''}`;
+  if (item.status === 'started') return '开始中...';
+  return '空闲';
 }
 
 function escapeHtml(input) {
@@ -81,7 +81,7 @@ discoverBtn.addEventListener('click', async () => {
   try {
     await tauri.core.invoke('discover_streams');
   } catch (err) {
-    console.error('Discovery failed:', err);
+    console.error('发现视频源失败:', err);
   }
 });
 
@@ -109,7 +109,7 @@ listEl.addEventListener('click', async (event) => {
     try {
       await tauri.core.invoke('pause_download', { url });
       current.status = 'paused';
-      current.message = 'Paused by user';
+      current.message = '已手动暂停';
       render();
     } catch (err) {
       current.status = 'failed';
@@ -123,7 +123,7 @@ listEl.addEventListener('click', async (event) => {
     try {
       await tauri.core.invoke('resume_download', { url });
       current.status = 'in_progress';
-      current.message = 'Resuming...';
+      current.message = '继续中...';
       render();
     } catch (err) {
       current.status = 'failed';
@@ -142,7 +142,7 @@ listEl.addEventListener('click', async (event) => {
     const baseName = sanitizeTitle(current.title);
     if (!baseName) {
       current.status = 'failed';
-      current.message = 'Missing .basic-name; trigger discovery on a loaded video first.';
+      current.message = '缺少 .basic-name，请先在视频已加载页面点击“发现视频源”。';
       render();
       return;
     }
@@ -153,7 +153,7 @@ listEl.addEventListener('click', async (event) => {
 
     if (!selectedPath) {
       current.status = 'idle';
-      current.message = 'Cancelled';
+      current.message = '已取消';
       render();
       return;
     }
@@ -213,7 +213,7 @@ function syncReviewWebviewLayout() {
     width,
     height,
   }).catch((err) => {
-    console.error('Layout review webview failed:', err);
+    console.error('子 WebView 布局失败:', err);
   });
 }
 
