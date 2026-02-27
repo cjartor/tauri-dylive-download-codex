@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use tauri::webview::WebviewBuilder;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl};
 use tauri_plugin_dialog::DialogExt;
+use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
 use url::Url;
 
@@ -203,159 +204,169 @@ async fn start_download(
     req: DownloadRequest,
 ) -> Result<String, String> {
     control.register(&req.m3u8_url);
-
-    emit_download(
-        &app,
-        DownloadEvent {
-            url: req.m3u8_url.clone(),
-            status: "started".into(),
-            progress: 0,
-            message: None,
-            output_path: None,
-        },
-    );
-
-    let safe_name = sanitize_name(
-        req.file_name
-            .as_deref()
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or("video"),
-    );
-    let output_file = if let Some(selected) = req.output_path.clone() {
-        let mut p = PathBuf::from(selected);
-        p.set_extension("mp4");
-        if let Some(parent) = p.parent() {
-            if !parent.exists() {
-                fs::create_dir_all(parent).map_err(|e| format!("create output dir failed: {e}"))?;
-            }
-        }
-        p
-    } else {
-        let out_dir = req
-            .output_dir
-            .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-        if !out_dir.exists() {
-            fs::create_dir_all(&out_dir).map_err(|e| format!("create output dir failed: {e}"))?;
-        }
-        unique_path(&out_dir, &safe_name, "mp4")
-    };
-
-    let first_playlist = match fetch_text(&req.m3u8_url).await {
-        Ok(v) => v,
-        Err(e) => {
-            control.remove(&req.m3u8_url);
-            return Err(e);
-        }
-    };
-    let media_playlist_url = match choose_media_playlist_url(&req.m3u8_url, &first_playlist) {
-        Ok(v) => v,
-        Err(e) => {
-            control.remove(&req.m3u8_url);
-            return Err(e);
-        }
-    };
-    let media_playlist = match fetch_text(&media_playlist_url).await {
-        Ok(v) => v,
-        Err(e) => {
-            control.remove(&req.m3u8_url);
-            return Err(e);
-        }
-    };
-    let segments = match parse_segments(&media_playlist_url, &media_playlist) {
-        Ok(v) => v,
-        Err(e) => {
-            control.remove(&req.m3u8_url);
-            return Err(e);
-        }
-    };
-
-    if segments.is_empty() {
-        control.remove(&req.m3u8_url);
-        return Err("no downloadable ts segments found in m3u8".into());
-    }
-
-    let mut file = File::create(&output_file).map_err(|e| format!("create file failed: {e}"))?;
-    let total = segments.len();
-    let mut paused_emitted = false;
-
-    for (idx, seg_url) in segments.iter().enumerate() {
-        while control.is_paused(&req.m3u8_url) {
-            if !paused_emitted {
-                emit_download(
-                    &app,
-                    DownloadEvent {
-                        url: req.m3u8_url.clone(),
-                        status: "paused".into(),
-                        progress: (((idx) as f32 / total as f32) * 100.0).round() as u8,
-                        message: Some("download paused".into()),
-                        output_path: None,
-                    },
-                );
-                paused_emitted = true;
-            }
-            sleep(Duration::from_millis(300)).await;
-        }
-        if paused_emitted {
-            emit_download(
-                &app,
-                DownloadEvent {
-                    url: req.m3u8_url.clone(),
-                    status: "in_progress".into(),
-                    progress: (((idx) as f32 / total as f32) * 100.0).round() as u8,
-                    message: Some("download resumed".into()),
-                    output_path: None,
-                },
-            );
-            paused_emitted = false;
-        }
-
-        let bytes = match reqwest::get(seg_url).await {
-            Ok(resp) => match resp.bytes().await {
-                Ok(v) => v,
-                Err(e) => {
-                    control.remove(&req.m3u8_url);
-                    return Err(format!("segment read failed: {e}"));
-                }
-            },
-            Err(e) => {
-                control.remove(&req.m3u8_url);
-                return Err(format!("segment request failed: {e}"));
-            }
-        };
-
-        if let Err(e) = file.write_all(&bytes) {
-            control.remove(&req.m3u8_url);
-            return Err(format!("write segment failed: {e}"));
-        }
-
-        let pct = (((idx + 1) as f32 / total as f32) * 100.0).round() as u8;
+    let result: Result<String, String> = async {
         emit_download(
             &app,
             DownloadEvent {
                 url: req.m3u8_url.clone(),
-                status: "in_progress".into(),
-                progress: pct,
-                message: Some(format!("downloaded {}/{} segments", idx + 1, total)),
+                status: "started".into(),
+                progress: 0,
+                message: None,
                 output_path: None,
             },
         );
+
+        let client = reqwest::Client::builder()
+            .pool_max_idle_per_host(16)
+            .tcp_keepalive(Some(Duration::from_secs(30)))
+            .build()
+            .map_err(|e| format!("create http client failed: {e}"))?;
+
+        let safe_name = sanitize_name(
+            req.file_name
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("video"),
+        );
+        let output_file = if let Some(selected) = req.output_path.clone() {
+            let mut p = PathBuf::from(selected);
+            p.set_extension("mp4");
+            if let Some(parent) = p.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent)
+                        .map_err(|e| format!("create output dir failed: {e}"))?;
+                }
+            }
+            p
+        } else {
+            let out_dir = req
+                .output_dir
+                .map(PathBuf::from)
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+            if !out_dir.exists() {
+                fs::create_dir_all(&out_dir).map_err(|e| format!("create output dir failed: {e}"))?;
+            }
+            unique_path(&out_dir, &safe_name, "mp4")
+        };
+
+        let first_playlist = fetch_text_with_client(&client, &req.m3u8_url).await?;
+        let media_playlist_url = choose_media_playlist_url(&req.m3u8_url, &first_playlist)?;
+        let media_playlist = fetch_text_with_client(&client, &media_playlist_url).await?;
+        let segments = parse_segments(&media_playlist_url, &media_playlist)?;
+
+        if segments.is_empty() {
+            return Err("no downloadable ts segments found in m3u8".into());
+        }
+
+        let mut file = File::create(&output_file).map_err(|e| format!("create file failed: {e}"))?;
+        let total = segments.len();
+        let max_inflight = 12usize;
+        let mut next_to_schedule = 0usize;
+        let mut next_to_write = 0usize;
+        let mut paused_emitted = false;
+        let mut inflight = JoinSet::<Result<(usize, Vec<u8>), String>>::new();
+        let mut ready: HashMap<usize, Vec<u8>> = HashMap::new();
+
+        while next_to_write < total {
+            while !control.is_paused(&req.m3u8_url)
+                && next_to_schedule < total
+                && inflight.len() < max_inflight
+            {
+                let idx = next_to_schedule;
+                let seg_url = segments[idx].clone();
+                let c = client.clone();
+                inflight.spawn(async move {
+                    let resp = c
+                        .get(&seg_url)
+                        .send()
+                        .await
+                        .map_err(|e| format!("segment request failed: {e}"))?;
+                    let bytes = resp
+                        .bytes()
+                        .await
+                        .map_err(|e| format!("segment read failed: {e}"))?;
+                    Ok((idx, bytes.to_vec()))
+                });
+                next_to_schedule += 1;
+            }
+
+            if control.is_paused(&req.m3u8_url) {
+                if !paused_emitted {
+                    emit_download(
+                        &app,
+                        DownloadEvent {
+                            url: req.m3u8_url.clone(),
+                            status: "paused".into(),
+                            progress: (((next_to_write) as f32 / total as f32) * 100.0).round() as u8,
+                            message: Some("download paused".into()),
+                            output_path: None,
+                        },
+                    );
+                    paused_emitted = true;
+                }
+                sleep(Duration::from_millis(300)).await;
+                continue;
+            }
+
+            if paused_emitted {
+                emit_download(
+                    &app,
+                    DownloadEvent {
+                        url: req.m3u8_url.clone(),
+                        status: "in_progress".into(),
+                        progress: (((next_to_write) as f32 / total as f32) * 100.0).round() as u8,
+                        message: Some("download resumed".into()),
+                        output_path: None,
+                    },
+                );
+                paused_emitted = false;
+            }
+
+            if let Some(joined) = inflight.join_next().await {
+                let result = joined.map_err(|e| format!("download worker join failed: {e}"))?;
+                let (idx, bytes) = result?;
+                ready.insert(idx, bytes);
+            } else if next_to_schedule >= total {
+                return Err("download interrupted unexpectedly".into());
+            }
+
+            while let Some(bytes) = ready.remove(&next_to_write) {
+                file.write_all(&bytes)
+                    .map_err(|e| format!("write segment failed: {e}"))?;
+
+                next_to_write += 1;
+                let pct = ((next_to_write as f32 / total as f32) * 100.0).round() as u8;
+                emit_download(
+                    &app,
+                    DownloadEvent {
+                        url: req.m3u8_url.clone(),
+                        status: "in_progress".into(),
+                        progress: pct,
+                        message: Some(format!("downloaded {}/{} segments", next_to_write, total)),
+                        output_path: None,
+                    },
+                );
+            }
+        }
+
+        let out = output_file.to_string_lossy().to_string();
+        emit_download(
+            &app,
+            DownloadEvent {
+                url: req.m3u8_url.clone(),
+                status: "success".into(),
+                progress: 100,
+                message: Some("download completed".into()),
+                output_path: Some(out.clone()),
+            },
+        );
+
+        Ok(out)
     }
+    .await;
 
-    let out = output_file.to_string_lossy().to_string();
     control.remove(&req.m3u8_url);
-    emit_download(
-        &app,
-        DownloadEvent {
-            url: req.m3u8_url,
-            status: "success".into(),
-            progress: 100,
-            message: Some("download completed".into()),
-            output_path: Some(out.clone()),
-        },
-    );
-
-    Ok(out)
+    result
 }
 
 #[tauri::command]
@@ -436,8 +447,10 @@ fn chrono_like_timestamp() -> String {
     ts.to_string()
 }
 
-async fn fetch_text(url: &str) -> Result<String, String> {
-    reqwest::get(url)
+async fn fetch_text_with_client(client: &reqwest::Client, url: &str) -> Result<String, String> {
+    client
+        .get(url)
+        .send()
         .await
         .map_err(|e| format!("request failed: {e}"))?
         .text()
