@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Mutex;
 use tauri::webview::WebviewBuilder;
 use tauri::{Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl};
@@ -205,6 +206,44 @@ fn resume_download(control: tauri::State<'_, DownloadControl>, url: String) -> R
 }
 
 #[tauri::command]
+fn open_download_folder(path: String) -> Result<(), String> {
+    let pb = PathBuf::from(path);
+    let target = if pb.is_dir() {
+        pb
+    } else {
+        pb.parent()
+            .ok_or_else(|| "invalid download path".to_string())?
+            .to_path_buf()
+    };
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| format!("open folder failed: {e}"))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| format!("open folder failed: {e}"))?;
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(&target)
+            .spawn()
+            .map_err(|e| format!("open folder failed: {e}"))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
 async fn start_download(
     app: tauri::AppHandle,
     control: tauri::State<'_, DownloadControl>,
@@ -267,6 +306,8 @@ async fn start_download(
 
         let mut file = File::create(&output_file).map_err(|e| format!("create file failed: {e}"))?;
         let total = segments.len();
+        let started_at = std::time::Instant::now();
+        let mut written_bytes: u64 = 0;
         let max_inflight = 12usize;
         let mut next_to_schedule = 0usize;
         let mut next_to_write = 0usize;
@@ -305,7 +346,7 @@ async fn start_download(
                             url: req.m3u8_url.clone(),
                             status: "paused".into(),
                             progress: (((next_to_write) as f32 / total as f32) * 100.0).round() as u8,
-                            message: Some("download paused".into()),
+                            message: Some("下载已暂停".into()),
                             output_path: None,
                         },
                     );
@@ -322,7 +363,7 @@ async fn start_download(
                         url: req.m3u8_url.clone(),
                         status: "in_progress".into(),
                         progress: (((next_to_write) as f32 / total as f32) * 100.0).round() as u8,
-                        message: Some("download resumed".into()),
+                        message: Some("下载继续中...".into()),
                         output_path: None,
                     },
                 );
@@ -340,16 +381,19 @@ async fn start_download(
             while let Some(bytes) = ready.remove(&next_to_write) {
                 file.write_all(&bytes)
                     .map_err(|e| format!("write segment failed: {e}"))?;
+                written_bytes += bytes.len() as u64;
 
                 next_to_write += 1;
                 let pct = ((next_to_write as f32 / total as f32) * 100.0).round() as u8;
+                let elapsed = started_at.elapsed().as_secs_f64().max(0.001);
+                let speed_kbps = (written_bytes as f64 / elapsed) / 1024.0;
                 emit_download(
                     &app,
                     DownloadEvent {
                         url: req.m3u8_url.clone(),
                         status: "in_progress".into(),
                         progress: pct,
-                        message: Some(format!("downloaded {}/{} segments", next_to_write, total)),
+                        message: Some(format!("已下载 {}/{}，{:.1} KB/s", next_to_write, total, speed_kbps)),
                         output_path: None,
                     },
                 );
@@ -363,7 +407,7 @@ async fn start_download(
                 url: req.m3u8_url.clone(),
                 status: "success".into(),
                 progress: 100,
-                message: Some("download completed".into()),
+                message: Some("下载完成".into()),
                 output_path: Some(out.clone()),
             },
         );
@@ -529,7 +573,8 @@ pub fn run() {
             layout_review_webview,
             pick_save_path,
             pause_download,
-            resume_download
+            resume_download,
+            open_download_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -66,6 +66,9 @@ function renderActions(item) {
   if (item.status === 'paused') {
     return `<button data-action="resume" data-url="${u}">继续</button>`;
   }
+  if (item.status === 'success' && item.outputPath) {
+    return `<button class="text-btn" data-action="open-folder" data-path="${encodeURIComponent(item.outputPath)}">打开文件夹</button>`;
+  }
   return `<button data-action="download" data-url="${u}">下载</button>`;
 }
 
@@ -107,11 +110,22 @@ toggleSidebarBtn.addEventListener('click', () => {
 });
 
 listEl.addEventListener('click', async (event) => {
-  const btn = event.target.closest('button[data-action][data-url]');
+  const btn = event.target.closest('button[data-action]');
   if (!btn) return;
 
   const action = btn.dataset.action;
-  const url = decodeURIComponent(btn.dataset.url);
+  if (action === 'open-folder') {
+    const outputPath = decodeURIComponent(btn.dataset.path || '');
+    if (!outputPath) return;
+    try {
+      await tauri.core.invoke('open_download_folder', { path: outputPath });
+    } catch (err) {
+      console.error('打开文件夹失败:', err);
+    }
+    return;
+  }
+
+  const url = decodeURIComponent(btn.dataset.url || '');
   const current = state.sources.get(url);
   if (!current) return;
 
