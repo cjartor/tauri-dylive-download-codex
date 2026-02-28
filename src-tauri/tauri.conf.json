@@ -13,7 +13,8 @@
         "title": "抖音直播回放下载器",
         "width": 1440,
         "height": 920,
-        "resizable": true
+        "resizable": true,
+        "titleBarStyle": "Visible"
       }
     ],
     "security": {
