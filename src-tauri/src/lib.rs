@@ -141,32 +141,32 @@ fn layout_review_webview(
         .get_webview(REVIEW_WEBVIEW_LABEL)
         .ok_or_else(|| "review webview not found".to_string())?;
 
-    let (chrome_x, chrome_y) = app
+    let titlebar_height = app
         .get_window("main")
         .and_then(|window| {
             let scale = window.scale_factor().ok().unwrap_or(1.0).max(0.000_1);
-            let outer = window.outer_position().ok();
-            let inner = window.inner_position().ok();
-            let mut dx = 0.0f64;
-            let mut dy = 0.0f64;
 
-            if let (Some(outer), Some(inner)) = (outer, inner) {
-                // Some platforms may report opposite axis direction; use absolute delta.
-                dx = (inner.x - outer.x).abs() as f64 / scale;
-                dy = (inner.y - outer.y).abs() as f64 / scale;
-            }
+            // macOS uses WebKit (Safari engine); keep conversion in logical pixels for stable child-webview layout.
+            let from_position = window
+                .outer_position()
+                .ok()
+                .zip(window.inner_position().ok())
+                .map(|(outer, inner)| (inner.y - outer.y).abs() as f64 / scale)
+                .unwrap_or(0.0);
 
-            if dy < 1.0 {
-                if let (Ok(outer_size), Ok(inner_size)) = (window.outer_size(), window.inner_size()) {
-                    dy = ((outer_size.height as i64 - inner_size.height as i64).max(0) as f64) / scale;
-                }
-            }
-            Some((dx, dy))
+            let from_size = window
+                .outer_size()
+                .ok()
+                .zip(window.inner_size().ok())
+                .map(|(outer, inner)| ((outer.height as i64 - inner.height as i64).max(0) as f64) / scale)
+                .unwrap_or(0.0);
+
+            Some(from_position.max(from_size))
         })
-        .unwrap_or((0.0, 0.0));
+        .unwrap_or(0.0);
 
-    let safe_x = (x + chrome_x).max(0.0);
-    let safe_y = (y + chrome_y).max(0.0);
+    let safe_x = x.max(0.0);
+    let safe_y = (y + titlebar_height).max(0.0);
     let safe_w = width.max(320.0);
     let safe_h = height.max(200.0);
 
