@@ -1,13 +1,10 @@
 const state = {
-  sidebarOpen: true,
   sources: new Map(),
 };
 
 const listEl = document.getElementById('source-list');
 const discoverBtn = document.getElementById('discover-btn');
 const clearBtn = document.getElementById('clear-btn');
-const toggleSidebarBtn = document.getElementById('toggle-sidebar');
-const sidebarEl = document.getElementById('sidebar');
 
 const tauri = window.__TAURI__;
 
@@ -101,12 +98,6 @@ discoverBtn.addEventListener('click', async () => {
 clearBtn.addEventListener('click', () => {
   state.sources.clear();
   render();
-});
-
-toggleSidebarBtn.addEventListener('click', () => {
-  state.sidebarOpen = !state.sidebarOpen;
-  sidebarEl.style.display = state.sidebarOpen ? 'flex' : 'none';
-  syncReviewWebviewLayout();
 });
 
 listEl.addEventListener('click', async (event) => {
