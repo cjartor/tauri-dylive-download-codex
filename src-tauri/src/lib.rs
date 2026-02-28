@@ -141,29 +141,28 @@ fn layout_review_webview(
         .get_webview(REVIEW_WEBVIEW_LABEL)
         .ok_or_else(|| "review webview not found".to_string())?;
 
-    let titlebar_height = app
-        .get_window("main")
-        .and_then(|window| {
-            let scale = window.scale_factor().ok().unwrap_or(1.0).max(0.000_1);
-
-            // macOS uses WebKit (Safari engine); keep conversion in logical pixels for stable child-webview layout.
-            let from_position = window
-                .outer_position()
-                .ok()
-                .zip(window.inner_position().ok())
-                .map(|(outer, inner)| (inner.y - outer.y).abs() as f64 / scale)
-                .unwrap_or(0.0);
-
-            let from_size = window
-                .outer_size()
-                .ok()
-                .zip(window.inner_size().ok())
-                .map(|(outer, inner)| ((outer.height as i64 - inner.height as i64).max(0) as f64) / scale)
-                .unwrap_or(0.0);
-
-            Some(from_position.max(from_size))
-        })
-        .unwrap_or(0.0);
+    let titlebar_height: f64 = {
+        #[cfg(target_os = "macos")]
+        {
+            // 在 macOS 上，Tauri/Winit 目前无法通过 outer 和 inner 的差值正确计算出标题栏高度，
+            // 通常标准的 macOS 标题栏高度为 28 逻辑像素
+            28.0
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            app.get_window("main")
+                .and_then(|window| {
+                    let scale = window.scale_factor().ok().unwrap_or(1.0).max(0.000_1);
+                    // 在 Windows 等平台上，outer 和 inner 的 y 坐标差值准确反映了顶部边框 + 标题栏的高度
+                    window
+                        .outer_position()
+                        .ok()
+                        .zip(window.inner_position().ok())
+                        .map(|(outer, inner)| (inner.y - outer.y).abs() as f64 / scale)
+                })
+                .unwrap_or(0.0)
+        }
+    };
 
     let safe_x = x.max(0.0);
     let safe_y = (y + titlebar_height).max(0.0);
