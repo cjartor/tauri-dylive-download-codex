@@ -141,8 +141,20 @@ fn layout_review_webview(
         .get_webview(REVIEW_WEBVIEW_LABEL)
         .ok_or_else(|| "review webview not found".to_string())?;
 
-    let safe_x = x.max(0.0);
-    let safe_y = y.max(0.0);
+    let (chrome_x, chrome_y) = app
+        .get_window("main")
+        .and_then(|window| {
+            let scale = window.scale_factor().ok().unwrap_or(1.0).max(0.000_1);
+            let outer = window.outer_position().ok()?;
+            let inner = window.inner_position().ok()?;
+            let dx = ((inner.x - outer.x) as f64 / scale).max(0.0);
+            let dy = ((inner.y - outer.y) as f64 / scale).max(0.0);
+            Some((dx, dy))
+        })
+        .unwrap_or((0.0, 0.0));
+
+    let safe_x = (x + chrome_x).max(0.0);
+    let safe_y = (y + chrome_y).max(0.0);
     let safe_w = width.max(320.0);
     let safe_h = height.max(200.0);
 
