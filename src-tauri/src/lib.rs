@@ -145,10 +145,22 @@ fn layout_review_webview(
         .get_window("main")
         .and_then(|window| {
             let scale = window.scale_factor().ok().unwrap_or(1.0).max(0.000_1);
-            let outer = window.outer_position().ok()?;
-            let inner = window.inner_position().ok()?;
-            let dx = ((inner.x - outer.x) as f64 / scale).max(0.0);
-            let dy = ((inner.y - outer.y) as f64 / scale).max(0.0);
+            let outer = window.outer_position().ok();
+            let inner = window.inner_position().ok();
+            let mut dx = 0.0f64;
+            let mut dy = 0.0f64;
+
+            if let (Some(outer), Some(inner)) = (outer, inner) {
+                // Some platforms may report opposite axis direction; use absolute delta.
+                dx = (inner.x - outer.x).abs() as f64 / scale;
+                dy = (inner.y - outer.y).abs() as f64 / scale;
+            }
+
+            if dy < 1.0 {
+                if let (Ok(outer_size), Ok(inner_size)) = (window.outer_size(), window.inner_size()) {
+                    dy = ((outer_size.height as i64 - inner_size.height as i64).max(0) as f64) / scale;
+                }
+            }
             Some((dx, dy))
         })
         .unwrap_or((0.0, 0.0));
