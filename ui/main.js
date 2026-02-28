@@ -228,8 +228,9 @@ function syncReviewWebviewLayout() {
   if (!tauri?.core?.invoke) return;
   const topbarHeight = topbarOffset();
   const sidebarWidth = state.sidebarOpen ? 420 : 0;
+  const docHeight = document.documentElement?.clientHeight || window.innerHeight;
   const width = Math.max(320, window.innerWidth - sidebarWidth);
-  const height = Math.max(220, window.innerHeight - topbarHeight);
+  const height = Math.max(220, docHeight - topbarHeight);
 
   tauri.core.invoke('layout_review_webview', {
     x: 0,
