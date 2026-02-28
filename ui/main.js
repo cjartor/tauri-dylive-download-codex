@@ -215,26 +215,21 @@ if (tauri?.event?.listen) {
 }
 
 let layoutFrame = null;
-const TOP_GAP = 32;
-
-function topbarOffset() {
-  const topbar = document.querySelector('.topbar');
-  const rect = topbar?.getBoundingClientRect?.();
-  const bottom = rect?.bottom ?? 64;
-  return Math.ceil(bottom + TOP_GAP);
-}
 
 function syncReviewWebviewLayout() {
   if (!tauri?.core?.invoke) return;
-  const topbarHeight = topbarOffset();
-  const sidebarWidth = state.sidebarOpen ? 420 : 0;
-  const docHeight = document.documentElement?.clientHeight || window.innerHeight;
-  const width = Math.max(320, window.innerWidth - sidebarWidth);
-  const height = Math.max(220, docHeight - topbarHeight);
+  const workspace = document.querySelector('.workspace');
+  const rect = workspace?.getBoundingClientRect?.();
+  if (!rect) return;
+
+  const x = Math.max(0, Math.round(rect.left));
+  const y = Math.max(0, Math.round(rect.top));
+  const width = Math.max(320, Math.round(rect.width));
+  const height = Math.max(220, Math.round(rect.height));
 
   tauri.core.invoke('layout_review_webview', {
-    x: 0,
-    y: topbarHeight,
+    x,
+    y,
     width,
     height,
   }).catch((err) => {
